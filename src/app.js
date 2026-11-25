@@ -31,19 +31,28 @@ app.put("/api/profile", authenticate, authorize("update_own_profile"), (req, res
     res.json({ id: req.user.id, name: req.user.name, role: req.user.role });
 });
 
-// V6 Fix: Path Traversal blocked. We extract just the filename and validate the path.
+const fs = require("fs");
+
+// V6 Fix: Path Traversal blocked using strict absolute path validation
 app.get("/api/download", authenticate, authorize("download_reports"), (req, res) => {
     const requestedFile = req.query.file || "summary.txt";
     const safeFile = path.basename(requestedFile); 
-    const filePath = path.join(__dirname, "reports", safeFile);
     
-    if (!filePath.startsWith(path.join(__dirname, "reports"))) {
-        return res.status(403).json({ message: "Access denied" });
+    // Resolve the absolute path
+    const reportsDir = path.resolve(__dirname, "reports");
+    const filePath = path.resolve(reportsDir, safeFile);
+    
+    // Strict check: Ensure the file path starts with the reports directory
+    if (!filePath.startsWith(reportsDir + path.sep)) {
+        return res.status(403).json({ message: "Access denied: Path traversal detected" });
     }
     
-    res.sendFile(filePath, (err) => {
-        if (err) res.status(404).json({ message: "File not found" });
-    });
+    // Ensure file exists before sending
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
+    }
+
+    res.sendFile(filePath);
 });
 
 // V7 Fix: Destructive action requires 'manage_users' permission
